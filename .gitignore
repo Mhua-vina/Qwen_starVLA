@@ -1,0 +1,22 @@
+# 忽略所有几十GB的模型权重
+weights/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+
+# 忽略海量的Parquet和HDF5数据集
+dataset/
+*.hdf5
+*.parquet
+demo_data/
+
+# 忽略训练产生的过程日志和缓存
+training_results_baseline/
+training_results/
+results/
+wandb/
+__pycache__/
+*.log
+*.whl
