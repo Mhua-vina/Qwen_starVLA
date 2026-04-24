@@ -21,7 +21,16 @@ from starVLA.dataloader.gr00t_lerobot.transform.video import (
     VideoToTensor,
 )
 # from gr00t.model.transforms import GR00TTransform
+import os
+import torch.distributed as dist
 
+# 伪造单机单卡分布式环境专门get_rank()
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '12355'
+os.environ['RANK'] = '0'
+os.environ['WORLD_SIZE'] = '1'
+if not dist.is_initialized():
+    dist.init_process_group(backend="gloo")
 
 class BaseDataConfig(ABC):
     @abstractmethod
@@ -33,7 +42,6 @@ class BaseDataConfig(ABC):
         pass
 
 
-###########################################################################################
 
 class OxeDroidDataConfig:
     video_keys = [
@@ -436,36 +444,32 @@ class SingleFrankaRobotiqDeltaEefDataConfig:
 ###########################################################################################
 
 class Libero4in1DataConfig:
+    # 🚀 [特洛伊木马] 披着 Franka 的皮，装着 Piper 的芯！
     video_keys = [
         "video.primary_image",
-        "video.wrist_image",
     ]
     
+    # 直接换成咱们真实的双臂状态键值
     state_keys = [
-        "state.x",
-        "state.y",
-        "state.z",
-        "state.roll",
-        "state.pitch",
-        "state.yaw",
-        "state.pad",
-        "state.gripper",
+        "state.left_joints",
+        "state.right_joints",
+        "state.left_gripper",
+        "state.right_gripper",
     ]
+    
+    # 直接换成咱们真实的双臂动作键值
     action_keys = [
-        "action.x",
-        "action.y",
-        "action.z",
-        "action.roll",
-        "action.pitch",
-        "action.yaw",
-        "action.gripper",
+        "action.left_joints",
+        "action.right_joints",
+        "action.left_gripper",
+        "action.right_gripper",
     ]
     
     language_keys = ["annotation.human.action.task_description"]
 
     observation_indices = [0]
-    action_indices = list(range(8))
-    state_indices = list(range(-16, 0))
+    action_indices = list(range(16)) # Piper 刚好 16 个自由度！
+    state_indices = [0]
 
     def modality_config(self):
         video_modality = ModalityConfig(
@@ -484,35 +488,39 @@ class Libero4in1DataConfig:
             delta_indices=self.observation_indices,
             modality_keys=self.language_keys,
         )
-        modality_configs = {
+        return {
             "video": video_modality,
             "state": state_modality,
             "action": action_modality,
             "language": language_modality,
         }
-        return modality_configs
 
     def transform(self):
         transforms = [
-            # action transforms
+            # 🛡️ 状态归一化安检：全面换成双臂标准！
+            StateActionToTensor(apply_to=self.state_keys),
+            StateActionTransform(
+                apply_to=self.state_keys,
+                normalization_modes={
+                    "state.left_joints": "min_max",
+                    "state.right_joints": "min_max",
+                    "state.left_gripper": "binary",
+                    "state.right_gripper": "binary",
+                },
+            ),
+            # ⚔️ 动作归一化安检：全面换成双臂标准！
             StateActionToTensor(apply_to=self.action_keys),
             StateActionTransform(
-            apply_to=self.action_keys,
-            normalization_modes={
-                "action.x": "min_max",
-                "action.y": "min_max",
-                "action.z": "min_max",
-                "action.roll": "min_max",
-                "action.pitch": "min_max",
-                "action.yaw": "min_max",
-            },
-        ),
+                apply_to=self.action_keys,
+                normalization_modes={
+                    "action.left_joints": "min_max",
+                    "action.right_joints": "min_max",
+                    "action.left_gripper": "binary",
+                    "action.right_gripper": "binary",
+                },
+            ),
         ]
-
         return ComposedModalityTransform(transforms=transforms)
-
-###########################################################################################
-
 
 class SingleFrankaRobotiqDeltaJointsDataConfig:
     video_keys = [
@@ -749,9 +757,9 @@ class SO101Config:
 
 class ArxX5DataConfig:
     video_keys = [
-        "video.cam_high",
-        "video.cam_left_wrist",
-        "video.cam_right_wrist",
+        "video.main_camera",
+        # "video.cam_left_wrist",
+        # "video.cam_right_wrist",
     ]
     state_keys = [
         "state.left_joints",
@@ -828,9 +836,9 @@ class ArxX5DataConfig:
 
 class AgilexDataConfig:
     video_keys = [
-        "video.cam_high",
-        "video.cam_left_wrist",
-        "video.cam_right_wrist",
+        "video.main_camera",
+        # "video.cam_left_wrist",
+        # "video.cam_right_wrist",
     ]
     state_keys = [
         "state.left_joints",
@@ -907,9 +915,9 @@ class AgilexDataConfig:
 
 class AgilexData50Config:
     video_keys = [
-        "video.cam_high",
-        "video.cam_left_wrist",
-        "video.cam_right_wrist",
+        "video.main_camera",
+        # "video.cam_left_wrist",
+        # "video.cam_right_wrist",
     ]
     state_keys = [
         "state.left_joints",

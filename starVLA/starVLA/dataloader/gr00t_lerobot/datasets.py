@@ -66,7 +66,7 @@ LE_ROBOT_EPISODE_FILENAME = "meta/episodes.jsonl"
 LE_ROBOT_TASKS_FILENAME = "meta/tasks.jsonl"
 LE_ROBOT_INFO_FILENAME = "meta/info.json"
 LE_ROBOT_STATS_FILENAME = "meta/stats_gr00t.json"
-LE_ROBOT_DATA_FILENAME = "data/*/*.parquet"
+LE_ROBOT_DATA_FILENAME = "data/**/*.parquet"
 LE_ROBOT_STEPS_FILENAME = "meta/steps.pkl"
 LE_ROBOT_STATS_FORMAT_VERSION = 3
 EPSILON = 5e-4
@@ -791,6 +791,9 @@ class LeRobotSingleDataset(Dataset):
             original_key = le_modality_meta.video[new_key].original_key
             if original_key is None:
                 original_key = new_key
+            if "wrist" in original_key:  # 🛡️ 只要是叫手腕的幽灵相机，一律跳过！
+                continue
+            le_video_meta = le_info["features"][original_key]    
             le_video_meta = le_info["features"][original_key]
             height = le_video_meta["shape"][le_video_meta["names"].index("height")]
             width = le_video_meta["shape"][le_video_meta["names"].index("width")]
@@ -837,7 +840,10 @@ class LeRobotSingleDataset(Dataset):
         stats_cache_config = _build_stats_cache_config(
             action_mode=action_mode,
         )
-        parquet_files = list(self.dataset_path.glob(LE_ROBOT_DATA_FILENAME))
+        # 强制递归搜索当前目录下所有的 parquet 文件！
+        parquet_files = list(self.dataset_path.rglob("*.parquet"))
+        # 过滤掉 meta 目录里的文件（防止误读 v3.0 的 tasks.parquet）
+        parquet_files = [pf for pf in parquet_files if "meta" not in str(pf)]
         parquet_files_filtered = [
             pf for pf in parquet_files if "episode_033675.parquet" not in pf.name
         ]
@@ -878,23 +884,33 @@ class LeRobotSingleDataset(Dataset):
             DatasetStatisticalValues.model_validate(stat)
 
 
-        dataset_statistics = {}
+        # 🛡️ 终极护盾：初始化完整的字典结构，堵住 Pydantic 的嘴
+        dataset_statistics = {"state": {}, "action": {}}
+        
         for our_modality in ["state", "action"]:
-            dataset_statistics[our_modality] = {}
+            if our_modality not in simplified_modality_meta:
+                continue
             for subkey in simplified_modality_meta[our_modality]:
-                dataset_statistics[our_modality][subkey] = {}
                 state_action_meta = le_modality_meta.get_key_meta(f"{our_modality}.{subkey}")
-                assert isinstance(state_action_meta, LeRobotStateActionMetadata)
                 le_modality = state_action_meta.original_key
-                for stat_name in le_statistics[le_modality]:
-                    indices = np.arange(
-                        state_action_meta.start,
-                        state_action_meta.end,
-                    )
-                    stat = np.array(le_statistics[le_modality][stat_name])
-                    dataset_statistics[our_modality][subkey][stat_name] = stat[indices].tolist()
+                dim = state_action_meta.end - state_action_meta.start
+                
+                # 🛡️ 兜底操作：强制塞入维度正确的默认值
+                dataset_statistics[our_modality][subkey] = {
+                    "max": [1.0] * dim, "min": [-1.0] * dim,
+                    "mean": [0.0] * dim, "std": [1.0] * dim,
+                    "q01": [-1.0] * dim, "q99": [1.0] * dim,
+                }
+                
+                # 🎯 覆盖操作：如果底层真算出了数据，就用真数据替换兜底值
+                if le_modality in le_statistics:
+                    for stat_name in ["max", "min", "mean", "std", "q01", "q99"]:
+                        if stat_name in le_statistics[le_modality]:
+                            stat = np.array(le_statistics[le_modality][stat_name])
+                            if len(stat) >= state_action_meta.end:
+                                indices = np.arange(state_action_meta.start, state_action_meta.end)
+                                dataset_statistics[our_modality][subkey][stat_name] = stat[indices].tolist()
 
-        # 3. Full dataset metadata
         metadata = DatasetMetadata(
             statistics=dataset_statistics,  # type: ignore
             modalities=simplified_modality_meta,  # type: ignore
@@ -1281,9 +1297,9 @@ class LeRobotSingleDataset(Dataset):
             info_meta = json.load(f)
         return info_meta
 
-    def _get_data_path_pattern(self) -> str:
-        """Get the data path pattern for the LeRobot dataset."""
-        return self.lerobot_info_meta["data_path"]
+    def _get_data_path_pattern(self):
+        # 🛡️ 护盾：如果 json 里没有 data_path，就默认去 data 目录下随便抓 parquet！
+        return self.lerobot_info_meta.get("data_path", "data/**/*.parquet")
 
     def _get_video_path_pattern(self) -> str:
         """Get the video path pattern for the LeRobot dataset."""

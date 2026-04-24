@@ -173,6 +173,12 @@ class TrainerUtils:
         if freeze_modules and isinstance(freeze_modules, str):
             patterns = [p.strip() for p in freeze_modules.split(",") if p.strip()] if freeze_modules else []
             
+            # 调试：打印所有模块名称
+            print("## 调试：模型模块列表")
+            for name, module in model.named_modules():
+                print(f"  [{name}]: {type(module).__name__}")
+            print("## 调试结束")
+            
             # Collect all submodules with their full paths
             for name, module in model.named_modules():
                 # Check if any pattern matches
@@ -183,8 +189,8 @@ class TrainerUtils:
                         if re.search(path, name):
                             matched = True
                             break
-                    # Otherwise, use exact match or prefix match
-                    elif name == path or name.endswith('.' + path):
+                    # Exact match OR path is contained in name
+                    if path == name or path in name:
                         matched = True
                         break
                 

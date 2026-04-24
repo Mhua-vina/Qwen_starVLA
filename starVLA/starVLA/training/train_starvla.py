@@ -41,14 +41,12 @@ from starVLA.training.trainer_utils.trainer_tools import TrainerUtils, build_par
 
 # Load DeepSpeed config - 使用配置文件方式
 ds_config_path = Path(__file__).parent.parent / "config" / "deepseeds" / "ds_config.yaml"
-deepspeed_plugin = DeepSpeedPlugin(
-    hf_ds_config=str(ds_config_path),
-)
+# deepspeed_plugin = DeepSpeedPlugin(hf_ds_config="/mnt/data01/minghua/Qwen_starVLA/starVLA/starVLA/config/Deepseeds/ds_config.yaml")
 # Avoid default c10d 30-minute timeout (1800000ms) on slow/imbalanced steps.
 # You can override via env: TORCH_DIST_TIMEOUT_MINUTES=1440
 dist_timeout_minutes = int(os.environ.get("TORCH_DIST_TIMEOUT_MINUTES", "1440"))
 process_group_kwargs = InitProcessGroupKwargs(timeout=timedelta(minutes=dist_timeout_minutes))
-accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin, kwargs_handlers=[process_group_kwargs])
+# accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin, kwargs_handlers=[process_group_kwargs])
 accelerator.print(accelerator.state)
 
 # Sane Defaults
@@ -123,34 +121,29 @@ class VLATrainer(TrainerUtils):
         self.total_batch_size = self._calculate_total_batch_size()
 
     def prepare_training(self):
-        rank = dist.get_rank() if dist.is_initialized() else 0
-        seed = self.config.seed + rank if hasattr(self.config, "seed") else rank + 3047
-        set_seed(seed)
-
-        self._init_checkpointing()
-        self._adjust_lr_scheduler_for_resume()
-
-        freeze_modules = (
-            self.config.trainer.freeze_modules
-            if (self.config and hasattr(self.config.trainer, "freeze_modules"))
-            else None
-        )
-        self.model = self.freeze_backbones(self.model, freeze_modules=freeze_modules)
+        # 💥 [终极防线] 物理隔离：只给 action_model 注册优化器
+        print("❄️ 执行白名单冻结：封死大脑，只留动作头...")
         
-        # 启用 gradient checkpointing 以减少显存占用
-        if getattr(self.config.trainer, 'enable_gradient_checkpointing', True):
-            self._enable_gradient_checkpointing()
+        # 1. 先把全场所有参数都关掉
+        for param in self.model.parameters():
+            param.requires_grad = False
+            
+        # 2. 只开启名字里带 "action_model" 的参数
+        trainable_count = 0
+        for name, param in self.model.named_parameters():
+            if "action_model" in name.lower():
+                param.requires_grad = True
+                trainable_count += 1
         
-        self.print_trainable_parameters(self.model)
+        print(f"✅ 成功唤醒 {trainable_count} 个动作头张量。大脑已进入深度睡眠。")
 
-        self.model, self.optimizer, self.vla_train_dataloader = self.setup_distributed_training(
-            self.accelerator,
-            self.model,
-            self.optimizer,
-            self.vla_train_dataloader,
-        )
+        # 3. 统计一下，如果这次 Trainable 还是几十亿，直接抛错停止，别等 20 分钟！
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        if trainable_params > 500 * 1000 * 1000: # 如果大于 500M，肯定漏网了
+            raise ValueError(f"🚨 警告！检测到 {trainable_params/1e6:.2f}M 参数要训练，这会爆显存！请检查结扎代码。")
 
-        self._init_wandb()
+        # 接下来再走原有的 accelerator.prepare() 流程
+        # ...
 
     def _calculate_total_batch_size(self):
         """Calculate global batch size."""
@@ -432,6 +425,19 @@ def main(cfg) -> None:
     output_dir = setup_directories(cfg=cfg)
     vla = build_framework(cfg)
     vla_train_dataloader = prepare_data(cfg=cfg, accelerator=accelerator, output_dir=output_dir)
+    vla = build_framework(cfg)
+
+    # ✅ 提前 freeze
+    freeze_modules = (
+        cfg.trainer.freeze_modules
+        if (cfg and hasattr(cfg.trainer, "freeze_modules"))
+        else None
+    )
+
+    from starVLA.training.trainer_utils.trainer_tools import TrainerUtils
+    vla = TrainerUtils().freeze_backbones(vla, freeze_modules=freeze_modules)
+
+    # ✅ 再建 optimizer（关键！）
     optimizer, lr_scheduler = setup_optimizer_and_scheduler(model=vla, cfg=cfg)
 
     trainer = VLATrainer(

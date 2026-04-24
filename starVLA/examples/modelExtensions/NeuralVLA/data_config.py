@@ -749,9 +749,9 @@ class SO101Config:
 
 class ArxX5DataConfig:
     video_keys = [
-        "video.cam_high",
-        "video.cam_left_wrist",
-        "video.cam_right_wrist",
+        "video.main_camera",
+        # "video.cam_left_wrist",
+        # "video.cam_right_wrist",
     ]
     state_keys = [
         "state.left_joints",
@@ -828,9 +828,9 @@ class ArxX5DataConfig:
 
 class AgilexDataConfig:
     video_keys = [
-        "video.cam_high",
-        "video.cam_left_wrist",
-        "video.cam_right_wrist",
+        "video.main_camera",
+        # "video.cam_left_wrist",
+        # "video.cam_right_wrist",
     ]
     state_keys = [
         "state.left_joints",

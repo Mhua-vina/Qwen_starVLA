@@ -35,7 +35,9 @@ from starVLA.model.framework import build_framework
 from starVLA.training.trainer_utils.config_tracker import AccessTrackedConfig, wrap_config
 from starVLA.training.trainer_utils.trainer_tools import TrainerUtils, build_param_lr_groups, normalize_dotlist_args
 
-deepspeed_plugin = DeepSpeedPlugin()
+deepspeed_plugin = DeepSpeedPlugin(
+        hf_ds_config="/mnt/data01/minghua/Qwen_starVLA/starVLA/starVLA/config/Deepseeds/ds_config.yaml"
+    )
 accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
 accelerator.print(accelerator.state)
 

@@ -5,9 +5,9 @@ from PIL import Image
 
 def main():
     # 你的“生鲜”原材料路径
-    hdf5_path = "/mnt/bigdata/minghua/starVLA_project/dataset/raw_data/piper_dual_arm_expert.hdf5"
+    hdf5_path = "/mnt/data01/minghua/Qwen_starVLA/piper_dual_arm_expert.hdf5"
     # 切好的“净菜”保存路径
-    out_dir = "/mnt/bigdata/minghua/starVLA_project/dataset/piper_lerobot_dataset"
+    out_dir = "/mnt/data01/minghua/Qwen_starVLA/starVLA/dataset/piper_lerobot_dataset"
     
     # 防止重复写入
     if os.path.exists(out_dir):
@@ -37,7 +37,7 @@ def main():
                     # 严格按照 LeRobot 要求的 Schema 吐出数据
                     yield {
                         "observation.images.main_camera": pil_img,
-                        "action": actions[frame_idx].tolist(), # 你的 16 维双臂动作
+                        "action": actions[frame_idx][:14].tolist(), # 强制截断，只保留 14 维双臂动作                            "task": instruction,
                         "task": instruction,
                         "episode_index": ep_idx,
                         "frame_index": frame_idx,
